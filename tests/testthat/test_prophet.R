@@ -7,11 +7,6 @@ N <- nrow(DATA)
 train <- DATA[1:floor(N / 2), ]
 future <- DATA[(ceiling(N/2) + 1):N, ]
 
-test_that("load_models", {
-  expect_error(prophet:::get_prophet_stan_model('linear'), NA)
-  expect_error(prophet:::get_prophet_stan_model('logistic'), NA)
-})
-
 test_that("fit_predict", {
   skip_if_not(Sys.getenv('R_ARCH') != '/i386')
   m <- prophet(train)
@@ -27,6 +22,25 @@ test_that("fit_predict_no_seasons", {
 test_that("fit_predict_no_changepoints", {
   skip_if_not(Sys.getenv('R_ARCH') != '/i386')
   m <- prophet(train, n.changepoints = 0)
+  expect_error(predict(m, future), NA)
+})
+
+test_that("fit_predict_changepoint_not_in_history", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  train_t <- dplyr::mutate(DATA, ds=zoo::as.Date(ds))
+  train_t <- dplyr::filter(train_t, (ds < zoo::as.Date('2013-01-01')) |
+                                (ds > zoo::as.Date('2014-01-01')))
+  future <- data.frame(ds=DATA$ds)
+  m <- prophet(train_t, changepoints=c('2013-06-06'))
+  expect_error(predict(m, future), NA)
+})
+
+test_that("fit_predict_duplicates", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  train2 <- train
+  train2$y <- train2$y + 10
+  train_t <- rbind(train, train2)
+  m <- prophet(train_t)
   expect_error(predict(m, future), NA)
 })
 
@@ -56,7 +70,7 @@ test_that("get_changepoints", {
 
   m <- prophet:::set_changepoints(m)
 
-  cp <- prophet:::get_changepoint_indexes(m)
+  cp <- m$changepoints.t
   expect_equal(length(cp), m$n.changepoints)
   expect_true(min(cp) > 0)
   expect_true(max(cp) < N)
@@ -76,9 +90,9 @@ test_that("get_zero_changepoints", {
   m$history <- history
 
   m <- prophet:::set_changepoints(m)
-  cp <- prophet:::get_changepoint_indexes(m)
+  cp <- m$changepoints.t
   expect_equal(length(cp), 1)
-  expect_equal(cp[1], 1)
+  expect_equal(cp[1], 0)
 
   mat <- prophet:::get_changepoint_matrix(m)
   expect_equal(nrow(mat), floor(N / 2))
@@ -100,7 +114,7 @@ test_that("fourier_series_yearly", {
 })
 
 test_that("growth_init", {
-  history <- DATA
+  history <- DATA[1:468, ]
   history$cap <- max(history$y)
   m <- prophet(history, growth = 'logistic', fit = FALSE)
 
@@ -186,4 +200,57 @@ test_that("fit_with_holidays", {
                          upper_window = c(1, 1))
   m <- prophet(DATA, holidays = holidays, uncertainty.samples = 0)
   expect_error(predict(m), NA)
+})
+
+test_that("make_future_dataframe", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  train.t <- DATA[1:234, ]
+  m <- prophet(train.t)
+  future <- make_future_dataframe(m, periods = 3, freq = 'd',
+                                  include_history = FALSE)
+  correct <- as.Date(c('2013-04-26', '2013-04-27', '2013-04-28'))
+  expect_equal(future$ds, correct)
+
+  future <- make_future_dataframe(m, periods = 3, freq = 'm',
+                                  include_history = FALSE)
+  correct <- as.Date(c('2013-05-25', '2013-06-25', '2013-07-25'))
+  expect_equal(future$ds, correct)
+})
+
+test_that("auto_weekly_seasonality", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  # Should be True
+  N.w <- 15
+  train.w <- DATA[1:N.w, ]
+  m <- prophet(train.w, fit = FALSE)
+  expect_equal(m$weekly.seasonality, 'auto')
+  m <- prophet:::fit.prophet(m, train.w)
+  expect_equal(m$weekly.seasonality, TRUE)
+  # Should be False due to too short history
+  N.w <- 9
+  train.w <- DATA[1:N.w, ]
+  m <- prophet(train.w)
+  expect_equal(m$weekly.seasonality, FALSE)
+  m <- prophet(train.w, weekly.seasonality = TRUE)
+  expect_equal(m$weekly.seasonality, TRUE)
+  # Should be False due to weekly spacing
+  train.w <- DATA[seq(1, nrow(DATA), 7), ]
+  m <- prophet(train.w)
+  expect_equal(m$weekly.seasonality, FALSE)
+})
+
+test_that("auto_yearly_seasonality", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  # Should be True
+  m <- prophet(DATA, fit = FALSE)
+  expect_equal(m$yearly.seasonality, 'auto')
+  m <- prophet:::fit.prophet(m, DATA)
+  expect_equal(m$yearly.seasonality, TRUE)
+  # Should be False due to too short history
+  N.w <- 240
+  train.y <- DATA[1:N.w, ]
+  m <- prophet(train.y)
+  expect_equal(m$yearly.seasonality, FALSE)
+  m <- prophet(train.y, yearly.seasonality = TRUE)
+  expect_equal(m$yearly.seasonality, TRUE)
 })

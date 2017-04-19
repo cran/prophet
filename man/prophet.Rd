@@ -2,52 +2,53 @@
 % Please edit documentation in R/prophet.R
 \name{prophet}
 \alias{prophet}
-\title{Prophet forecast.}
+\title{Prophet forecaster.}
 \usage{
 prophet(df = df, growth = "linear", changepoints = NULL,
-  n.changepoints = 25, yearly.seasonality = TRUE,
-  weekly.seasonality = TRUE, holidays = NULL,
-  seasonality.prior.scale = 10, changepoint.prior.scale = 0.05,
-  holidays.prior.scale = 10, mcmc.samples = 0, interval.width = 0.8,
-  uncertainty.samples = 1000, fit = TRUE)
+  n.changepoints = 25, yearly.seasonality = "auto",
+  weekly.seasonality = "auto", holidays = NULL,
+  seasonality.prior.scale = 10, holidays.prior.scale = 10,
+  changepoint.prior.scale = 0.05, mcmc.samples = 0, interval.width = 0.8,
+  uncertainty.samples = 1000, fit = TRUE, ...)
 }
 \arguments{
-\item{df}{Data frame with columns ds (date type) and y, the time series.
-If growth is logistic, then df must also have a column cap that specifies
-the capacity at each ds.}
+\item{df}{Dataframe containing the history. Must have columns ds (date type)
+and y, the time series. If growth is logistic, then df must also have a
+column cap that specifies the capacity at each ds.}
 
 \item{growth}{String 'linear' or 'logistic' to specify a linear or logistic
 trend.}
 
 \item{changepoints}{Vector of dates at which to include potential
-changepoints. Each date must be present in df$ds. If not specified,
-potential changepoints are selected automatically.}
+changepoints. If not specified, potential changepoints are selected
+automatically.}
 
 \item{n.changepoints}{Number of potential changepoints to include. Not used
 if input `changepoints` is supplied. If `changepoints` is not supplied,
 then n.changepoints potential changepoints are selected uniformly from the
 first 80 percent of df$ds.}
 
-\item{yearly.seasonality}{Boolean, fit yearly seasonality.}
+\item{yearly.seasonality}{Fit yearly seasonality; 'auto', TRUE, or FALSE.}
 
-\item{weekly.seasonality}{Boolean, fit weekly seasonality.}
+\item{weekly.seasonality}{Fit weekly seasonality; 'auto', TRUE, or FALSE.}
 
 \item{holidays}{data frame with columns holiday (character) and ds (date
 type)and optionally columns lower_window and upper_window which specify a
-range of days around the date to be included as holidays.}
+range of days around the date to be included as holidays. lower_window=-2
+will include 2 days prior to the date as holidays.}
 
 \item{seasonality.prior.scale}{Parameter modulating the strength of the
 seasonality model. Larger values allow the model to fit larger seasonal
 fluctuations, smaller values dampen the seasonality.}
 
+\item{holidays.prior.scale}{Parameter modulating the strength of the holiday
+components model.}
+
 \item{changepoint.prior.scale}{Parameter modulating the flexibility of the
 automatic changepoint selection. Large values will allow many changepoints,
 small values will allow few changepoints.}
 
-\item{holidays.prior.scale}{Parameter modulating the strength of the holiday
-components model.}
-
-\item{mcmc.samples}{Integer, if great than 0, will do full Bayesian
+\item{mcmc.samples}{Integer, if greater than 0, will do full Bayesian
 inference with the specified number of MCMC samples. If 0, will do MAP
 estimation.}
 
@@ -61,12 +62,14 @@ which will include uncertainty in seasonality.}
 uncertainty intervals.}
 
 \item{fit}{Boolean, if FALSE the model is initialized but not fit.}
+
+\item{...}{Additional arguments, passed to \code{\link{fit.prophet}}}
 }
 \value{
 A prophet model.
 }
 \description{
-Prophet forecast.
+Prophet forecaster.
 }
 \examples{
 \dontrun{

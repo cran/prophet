@@ -2,7 +2,7 @@
 % Please edit documentation in R/prophet.R
 \name{get_prophet_stan_model}
 \alias{get_prophet_stan_model}
-\title{Load Stan model}
+\title{Load compiled Stan model}
 \usage{
 get_prophet_stan_model(model)
 }
@@ -14,6 +14,6 @@ trend.}
 Stan model.
 }
 \description{
-Load Stan model
+Load compiled Stan model
 }
 
