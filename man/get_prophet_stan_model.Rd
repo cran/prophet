@@ -16,4 +16,5 @@ Stan model.
 \description{
 Load compiled Stan model
 }
+\keyword{internal}
 

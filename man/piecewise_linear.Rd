@@ -23,4 +23,5 @@ Vector y(t).
 \description{
 Evaluate the piecewise linear function.
 }
+\keyword{internal}
 

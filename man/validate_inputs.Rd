@@ -12,4 +12,5 @@ validate_inputs(m)
 \description{
 Validates the inputs to Prophet.
 }
+\keyword{internal}
 

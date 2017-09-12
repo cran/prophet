@@ -16,4 +16,5 @@ Stan model.
 \description{
 Compile Stan model
 }
+\keyword{internal}
 

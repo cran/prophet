@@ -21,4 +21,5 @@ A ggplot2 plot.
 \description{
 Plot the weekly component of the forecast.
 }
+\keyword{internal}
 
