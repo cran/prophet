@@ -1,13 +1,13 @@
-bf2373499f19c343712d95f207448665 *DESCRIPTION
+0dc613710108eed8848cd9cbe7482291 *DESCRIPTION
 1cee7202c80055f15326e582598c14de *LICENSE
 d93d91b072353977ee257ec4d5a37244 *NAMESPACE
 be694680c364d58a0296bbba17e51bd6 *R/diagnostics.R
-f2539fc78c807b648f70c544ddb144ee *R/prophet.R
+375cce0dcadc7fd6990f75f6b2579c09 *R/prophet.R
 e321d4eed2835be669068dce23b2b006 *R/zzz.R
 f5512b60513d79240cf8132cc4db800d *build/vignette.rds
 d8350dc06ff55208848beae52b754f63 *inst/doc/quick_start.R
 07681f9e7bf373a3f87789cc45b2c9bd *inst/doc/quick_start.Rmd
-537708789a10e12b116c2e7b07f7bcd8 *inst/doc/quick_start.html
+a13e4d4909db1ff8cecdaba35a18ea57 *inst/doc/quick_start.html
 5ed9b2f5556f64c9c253d9828a08877c *inst/stan/prophet_linear_growth.RData
 1fdd477dd8bcc50395c4e25c8741f1c1 *inst/stan/prophet_linear_growth.stan
 98ce59bd4398349b4168b598fcfec65e *inst/stan/prophet_logistic_growth.stan
@@ -64,5 +64,5 @@ baa467dfb5eb61563a4402fcbcc0fc2c *tests/testthat.R
 94336111afda4faab42e7f899ddc24f8 *tests/testthat/data.csv
 1802e9384ee6db97ae3f50bbe991b8c9 *tests/testthat/data2.csv
 979f6d7982eac24699892a1f05c3f330 *tests/testthat/test_diagnostics.R
-bce97b608b921d1e58dba368e8c9d523 *tests/testthat/test_prophet.R
+7ec2d83a9bc1271689c93c60f7193312 *tests/testthat/test_prophet.R
 07681f9e7bf373a3f87789cc45b2c9bd *vignettes/quick_start.Rmd
