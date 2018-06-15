@@ -37,4 +37,3 @@ specified, m$seasonality.mode will be used. 'additive' means the effect of
 the regressor will be added to the trend, 'multiplicative' means it will
 multiply the trend.
 }
-

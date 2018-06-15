@@ -18,4 +18,3 @@ Array of mean absolute errors.
 Mean absolute error
 }
 \keyword{internal}
-

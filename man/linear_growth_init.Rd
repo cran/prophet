@@ -20,4 +20,3 @@ growth and offset parameters that pass the function through the first and
 last points in the time series.
 }
 \keyword{internal}
-

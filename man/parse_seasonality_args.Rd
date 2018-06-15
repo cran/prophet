@@ -25,4 +25,3 @@ Number of Fourier components, or 0 for disabled.
 Get number of Fourier components for built-in seasonalities.
 }
 \keyword{internal}
-

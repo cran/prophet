@@ -20,4 +20,3 @@ numeric time difference
 Compute time difference of two POSIXct objects
 }
 \keyword{internal}
-

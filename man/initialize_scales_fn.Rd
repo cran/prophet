@@ -20,4 +20,3 @@ Prophet object with scales set.
 Sets model scaling factors using df.
 }
 \keyword{internal}
-

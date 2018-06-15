@@ -18,4 +18,3 @@ Dataframe with seasonal components.
 Predict seasonality components, holidays, and added regressors.
 }
 \keyword{internal}
-

@@ -31,4 +31,3 @@ until initial is reached.
 When period is equal to the time interval of the data, this is the
 technique described in https://robjhyndman.com/hyndsight/tscv/ .
 }
-

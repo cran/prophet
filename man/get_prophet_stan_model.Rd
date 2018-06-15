@@ -17,4 +17,3 @@ Stan model.
 Load compiled Stan model
 }
 \keyword{internal}
-

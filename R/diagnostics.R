@@ -87,7 +87,7 @@ cross_validation <- function(
 
   cutoffs <- generate_cutoffs(df, horizon.dt, initial.dt, period.dt)
   predicts <- data.frame()
-  for (i in seq_along(cutoffs)) {
+  for (i in 1:length(cutoffs)) {
     cutoff <- cutoffs[i]
     # Copy the model
     m <- prophet_copy(model, cutoff)

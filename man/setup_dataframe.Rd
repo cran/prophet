@@ -23,4 +23,3 @@ Adds a time index and scales y. Creates auxillary columns 't', 't_ix',
 and predicting.
 }
 \keyword{internal}
-

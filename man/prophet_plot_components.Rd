@@ -41,4 +41,3 @@ Prints a ggplot2 with whichever are available of: trend, holidays, weekly
 seasonality, yearly seasonality, and additive and multiplicative extra
 regressors.
 }
-

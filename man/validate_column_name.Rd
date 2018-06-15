@@ -22,4 +22,3 @@ validate_column_name(m, name, check_holidays = TRUE,
 Validates the name of a seasonality, holiday, or regressor.
 }
 \keyword{internal}
-

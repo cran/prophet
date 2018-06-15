@@ -13,4 +13,3 @@ validate_inputs(m)
 Validates the inputs to Prophet.
 }
 \keyword{internal}
-

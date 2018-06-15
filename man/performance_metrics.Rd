@@ -44,4 +44,3 @@ forecast points. The results are set to the right edge of the window.
 The output is a dataframe containing column 'horizon' along with columns
 for each of the metrics computed.
 }
-

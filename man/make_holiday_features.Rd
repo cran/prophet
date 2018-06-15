@@ -21,4 +21,3 @@ A list with entries
 Construct a matrix of holiday features.
 }
 \keyword{internal}
-

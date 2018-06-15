@@ -19,4 +19,3 @@ List with posterior predictive samples for the forecast yhat and
 Prophet posterior predictive samples.
 }
 \keyword{internal}
-

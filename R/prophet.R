@@ -6,7 +6,7 @@
 ## of patent rights can be found in the PATENTS file in the same directory.
 
 ## Makes R CMD CHECK happy due to dplyr syntax below
-utils::globalVariables(c(
+globalVariables(c(
   "ds", "y", "cap", ".",
   "component", "dow", "doy", "holiday", "holidays", "holidays_lower", "holidays_upper", "ix",
   "lower", "n", "stat", "trend", "row_number", "extra_regressors", "col",
@@ -203,21 +203,21 @@ validate_column_name <- function(
     'holidays', 'zeros', 'extra_regressors_additive', 'yhat',
     'extra_regressors_multiplicative', 'multiplicative_terms'
   )
-  rn_l = paste0(reserved_names,"_lower")
-  rn_u = paste0(reserved_names,"_upper")
+  rn_l = paste(reserved_names,"_lower",sep="")
+  rn_u = paste(reserved_names,"_upper",sep="")
   reserved_names = c(reserved_names, rn_l, rn_u,
     c("ds", "y", "cap", "floor", "y_scaled", "cap_scaled"))
   if(name %in% reserved_names){
     stop("Name ", name, " is reserved.")
   }
-  if(check_holidays && !is.null(m$holidays) &&
+  if(check_holidays & !is.null(m$holidays) &
      (name %in% unique(m$holidays$holiday))){
     stop("Name ", name, " already used for a holiday.")
   }
-  if(check_seasonalities && (!is.null(m$seasonalities[[name]]))){
+  if(check_seasonalities & (!is.null(m$seasonalities[[name]]))){
     stop("Name ", name, " already used for a seasonality.")
   }
-  if(check_regressors && (!is.null(m$seasonalities[[name]]))){
+  if(check_regressors & (!is.null(m$seasonalities[[name]]))){
     stop("Name ", name, " already used for an added regressor.")
   }
 }
@@ -289,8 +289,11 @@ set_date <- function(ds = NULL, tz = "GMT") {
     ds <- as.character(ds)
   }
 
-  fmt <- if (min(nchar(ds)) < 12) "%Y-%m-%d" else "%Y-%m-%d %H:%M:%S"
-  ds <- as.POSIXct(ds, format = fmt, tz = tz)
+  if (min(nchar(ds), na.rm=TRUE) < 12) {
+    ds <- as.POSIXct(ds, format = "%Y-%m-%d", tz = tz)
+  } else {
+    ds <- as.POSIXct(ds, format = "%Y-%m-%d %H:%M:%S", tz = tz)
+  }
   attr(ds, "tzone") <- tz
   return(ds)
 }
@@ -475,7 +478,7 @@ set_changepoints <- function(m) {
     m$changepoints.t <- sort(
       time_diff(m$changepoints, m$start, "secs")) / m$t.scale
   } else {
-    m$changepoints.t <- 0  # dummy changepoint
+    m$changepoints.t <- c(0)  # dummy changepoint
   }
   return(m)
 }
@@ -492,7 +495,7 @@ set_changepoints <- function(m) {
 fourier_series <- function(dates, period, series.order) {
   t <- time_diff(dates, set_date('1970-01-01 00:00:00'))
   features <- matrix(0, length(t), 2 * series.order)
-  for (i in seq_len(series.order)) {
+  for (i in 1:series.order) {
     x <- as.numeric(2 * i * pi * t / period)
     features[, i * 2 - 1] <- sin(x)
     features[, i * 2] <- cos(x)
@@ -512,7 +515,7 @@ fourier_series <- function(dates, period, series.order) {
 #' @keywords internal
 make_seasonality_features <- function(dates, period, series.order, prefix) {
   features <- fourier_series(dates, period, series.order)
-  colnames(features) <- paste(prefix, seq_len(ncol(features)), sep = '_delim_')
+  colnames(features) <- paste(prefix, 1:ncol(features), sep = '_delim_')
   return(data.frame(features))
 }
 
@@ -540,13 +543,13 @@ make_holiday_features <- function(m, dates) {
           && !is.na(.$upper_window)) {
         offsets <- seq(.$lower_window, .$upper_window)
       } else {
-        offsets <- 0
+        offsets <- c(0)
       }
       names <- paste(.$holiday, '_delim_', ifelse(offsets < 0, '-', '+'),
                      abs(offsets), sep = '')
       dplyr::data_frame(ds = .$ds + offsets * 24 * 3600, holiday = names)
     }) %>%
-    dplyr::mutate(x = 1) %>%
+    dplyr::mutate(x = 1.) %>%
     tidyr::spread(holiday, x, fill = 0)
 
   holiday.features <- data.frame(ds = set_date(dates)) %>%
@@ -719,7 +722,7 @@ add_seasonality <- function(
 #'
 #' @keywords internal
 make_all_seasonality_features <- function(m, df) {
-  seasonal.features <- data.frame(row.names = seq_len(nrow(df)))
+  seasonal.features <- data.frame(row.names = 1:nrow(df))
   prior.scales <- c()
   modes <- list(additive = c(), multiplicative = c())
 
@@ -754,7 +757,7 @@ make_all_seasonality_features <- function(m, df) {
   # Dummy to prevent empty X
   if (ncol(seasonal.features) == 0) {
     seasonal.features <- data.frame(zeros = rep(0, nrow(df)))
-    prior.scales <- 1
+    prior.scales <- c(1.)
   }
 
   components.list <- regressor_column_matrix(m, seasonal.features, modes)
@@ -1218,7 +1221,7 @@ piecewise_linear <- function(t, deltas, k, m, changepoint.ts) {
   # Get cumulative slope and intercept at each t
   k_t <- rep(k, length(t))
   m_t <- rep(m, length(t))
-  for (s in seq_along(changepoint.ts)) {
+  for (s in 1:length(changepoint.ts)) {
     indx <- t >= changepoint.ts[s]
     k_t[indx] <- k_t[indx] + deltas[s]
     m_t[indx] <- m_t[indx] + gammas[s]
@@ -1243,14 +1246,14 @@ piecewise_logistic <- function(t, cap, deltas, k, m, changepoint.ts) {
   # Compute offset changes
   k.cum <- c(k, cumsum(deltas) + k)
   gammas <- rep(0, length(changepoint.ts))
-  for (i in seq_along(changepoint.ts)) {
+  for (i in 1:length(changepoint.ts)) {
     gammas[i] <- ((changepoint.ts[i] - m - sum(gammas))
                   * (1 - k.cum[i] / k.cum[i + 1]))
   }
   # Get cumulative rate and offset at each t
   k_t <- rep(k, length(t))
   m_t <- rep(m, length(t))
-  for (s in seq_along(changepoint.ts)) {
+  for (s in 1:length(changepoint.ts)) {
     indx <- t >= changepoint.ts[s]
     k_t[indx] <- k_t[indx] + deltas[s]
     m_t[indx] <- m_t[indx] + gammas[s]
@@ -1301,9 +1304,9 @@ predict_seasonal_components <- function(m, df) {
   X <- as.matrix(seasonal.features)
   component.predictions <- data.frame(matrix(ncol = 0, nrow = nrow(X)))
   for (component in colnames(component.cols)) {
-    beta.c <- m$params$beta * component.cols[[component]]
+    beta.c <- t(m$params$beta) * component.cols[[component]]
 
-    comp <- X %*% t(beta.c)
+    comp <- X %*% beta.c
     if (component %in% m$component.modes$additive) {
       comp <- comp * m$y.scale
     }
@@ -1337,9 +1340,9 @@ sample_posterior_predictive <- function(m, df) {
   sim.values <- list("trend" = matrix(, nrow = nrow(df), ncol = nsamp),
                      "yhat" = matrix(, nrow = nrow(df), ncol = nsamp))
 
-  for (i in seq_len(n.iterations)) {
+  for (i in 1:n.iterations) {
     # For each set of parameters from MCMC (or just 1 set for MAP),
-    for (j in seq_len(samp.per.iter)) {
+    for (j in 1:samp.per.iter) {
       # Do a simulation with this set of parameters,
       sim <- sample_model(
         m = m,

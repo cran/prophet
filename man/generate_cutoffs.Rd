@@ -22,4 +22,3 @@ Array of datetimes.
 Generate cutoff dates
 }
 \keyword{internal}
-

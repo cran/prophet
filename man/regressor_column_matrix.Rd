@@ -27,4 +27,3 @@ Includes combination components, like 'additive_terms'. These combination
 components will be added to the 'modes' input.
 }
 \keyword{internal}
-

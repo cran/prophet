@@ -20,4 +20,3 @@ Matrix with seasonality features.
 Provides Fourier series components with the specified frequency and order.
 }
 \keyword{internal}
-

@@ -19,4 +19,3 @@ Right-aligned. Padded with NAs on the front so the output is the same
 size as x.
 }
 \keyword{internal}
-

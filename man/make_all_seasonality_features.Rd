@@ -28,4 +28,3 @@ Dataframe with seasonality features.
 Includes seasonality features, holiday features, and added regressors.
 }
 \keyword{internal}
-

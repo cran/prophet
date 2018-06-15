@@ -18,4 +18,3 @@ Vector with trend on prediction dates.
 Predict trend using the prophet model.
 }
 \keyword{internal}
-

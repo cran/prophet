@@ -26,4 +26,3 @@ Vector y(t).
 Evaluate the piecewise logistic function.
 }
 \keyword{internal}
-

@@ -39,4 +39,3 @@ specified, m$seasonality.mode will be used (defaults to 'additive').
 Additive means the seasonality will be added to the trend, multiplicative
 means it will multiply the trend.
 }
-

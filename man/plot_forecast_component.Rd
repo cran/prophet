@@ -24,4 +24,3 @@ A ggplot2 plot.
 \description{
 Plot a particular component of the forecast.
 }
-

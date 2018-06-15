@@ -20,4 +20,3 @@ An unfitted Prophet model object with the same parameters as the
 Copy Prophet object.
 }
 \keyword{internal}
-

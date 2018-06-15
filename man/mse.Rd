@@ -18,4 +18,3 @@ Array of mean squared errors.
 Mean squared error
 }
 \keyword{internal}
-

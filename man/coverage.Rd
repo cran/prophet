@@ -18,4 +18,3 @@ Array of coverages
 Coverage
 }
 \keyword{internal}
-

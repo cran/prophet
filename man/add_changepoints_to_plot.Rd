@@ -33,4 +33,3 @@ plot(m, fcst) + add_changepoints_to_plot(m)
 }
 
 }
-

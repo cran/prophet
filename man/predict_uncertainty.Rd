@@ -18,4 +18,3 @@ Dataframe with uncertainty intervals.
 Prophet uncertainty intervals for yhat and trend
 }
 \keyword{internal}
-

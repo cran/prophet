@@ -22,4 +22,3 @@ Adds a component with given name that contains all of the components
 in group.
 }
 \keyword{internal}
-

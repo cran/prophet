@@ -18,4 +18,3 @@ A dataframe with seasonal components on ds.
 Prepare dataframe for plotting seasonal components.
 }
 \keyword{internal}
-

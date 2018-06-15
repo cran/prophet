@@ -17,4 +17,3 @@ Stan model.
 Compile Stan model
 }
 \keyword{internal}
-

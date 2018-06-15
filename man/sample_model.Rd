@@ -26,4 +26,3 @@ List of trend and yhat, each a vector like df$t.
 Simulate observations from the extrapolated generative model.
 }
 \keyword{internal}
-

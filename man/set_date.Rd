@@ -18,4 +18,3 @@ vector of POSIXct object converted from date
 Convert the date to POSIXct object
 }
 \keyword{internal}
-

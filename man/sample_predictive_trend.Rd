@@ -20,4 +20,3 @@ Vector of simulated trend over df$t.
 Simulate the trend using the extrapolated generative model.
 }
 \keyword{internal}
-

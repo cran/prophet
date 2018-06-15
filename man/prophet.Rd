@@ -96,4 +96,3 @@ m <- prophet(history)
 }
 
 }
-

@@ -22,4 +22,3 @@ Dataframe with seasonality.
 Data frame with seasonality features.
 }
 \keyword{internal}
-

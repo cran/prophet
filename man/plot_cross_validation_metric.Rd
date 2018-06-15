@@ -34,4 +34,3 @@ As a concrete example, if metric='mse', then this plot will show the
 squared error for each cross validation prediction, along with the MSE
 averaged over rolling windows of 10% of the data.
 }
-

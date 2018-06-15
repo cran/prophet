@@ -20,4 +20,3 @@ A ggplot2 plot.
 Plot a custom seasonal component.
 }
 \keyword{internal}
-

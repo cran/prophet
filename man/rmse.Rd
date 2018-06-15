@@ -18,4 +18,3 @@ Array of root mean squared errors.
 Root mean squared error
 }
 \keyword{internal}
-

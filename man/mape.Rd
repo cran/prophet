@@ -18,4 +18,3 @@ Array of mean absolute percent errors.
 Mean absolute percent error
 }
 \keyword{internal}
-

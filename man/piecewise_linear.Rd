@@ -24,4 +24,3 @@ Vector y(t).
 Evaluate the piecewise linear function.
 }
 \keyword{internal}
-

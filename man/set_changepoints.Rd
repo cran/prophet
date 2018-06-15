@@ -21,4 +21,3 @@ Sets m$changepoints to the dates of changepoints. Either:
 3) The user prefers no changepoints be used.
 }
 \keyword{internal}
-

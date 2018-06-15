@@ -34,4 +34,3 @@ dyplot.prophet(m, forecast)
 }
 
 }
-

@@ -19,4 +19,3 @@ A list with items "trend" and "yhat" containing
 \description{
 Sample from the posterior predictive distribution.
 }
-
