@@ -147,13 +147,14 @@ test_that("copy", {
       uncertainty.samples = 200,
       fit = FALSE
     )
+    m1$country_holidays <- 'US'
     out <- prophet:::setup_dataframe(m1, df, initialize_scales = TRUE)
     m1 <- out$m
     m1$history <- out$df
     m1 <- prophet:::set_auto_seasonalities(m1)
     m2 <- prophet:::prophet_copy(m1)
     # Values should be copied correctly
-    args <- c('growth', 'changepoints', 'n.changepoints', 'holidays',
+    args <- c('growth', 'changepoints', 'n.changepoints', 'holidays', 'country_holidays',
               'seasonality.prior.scale', 'holidays.prior.scale',
               'changepoints.prior.scale', 'mcmc.samples', 'interval.width',
               'uncertainty.samples', 'seasonality.mode', 'changepoint.range')

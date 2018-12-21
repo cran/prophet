@@ -8,10 +8,12 @@
 ## Makes R CMD CHECK happy due to dplyr syntax below
 globalVariables(c(
   "ds", "y", "cap", ".",
-  "component", "dow", "doy", "holiday", "holidays", "holidays_lower", "holidays_upper", "ix",
-  "lower", "n", "stat", "trend", "row_number", "extra_regressors", "col",
+  "component", "dow", "doy", "holiday", "holidays", "holidays_lower", "generated_holidays",
+  "holidays_upper", "ix", "lower", "n", "stat", "trend", "row_number", "extra_regressors", "col",
   "trend_lower", "trend_upper", "upper", "value", "weekly", "weekly_lower", "weekly_upper",
-  "x", "yearly", "yearly_lower", "yearly_upper", "yhat", "yhat_lower", "yhat_upper"))
+  "x", "yearly", "yearly_lower", "yearly_upper", "yhat", "yhat_lower", "yhat_upper",
+  "country", "year"
+))
 
 #' Prophet forecaster.
 #'
@@ -78,6 +80,7 @@ globalVariables(c(
 #' @export
 #' @importFrom dplyr "%>%"
 #' @import Rcpp
+#' @import rlang
 prophet <- function(df = NULL,
                     growth = 'linear',
                     changepoints = NULL,
@@ -125,14 +128,16 @@ prophet <- function(df = NULL,
     changepoints.t = NULL,
     seasonalities = list(),
     extra_regressors = list(),
+    country_holidays = NULL,
     stan.fit = NULL,
     params = list(),
     history = NULL,
     history.dates = NULL,
+    train.holiday.names = NULL,
     train.component.cols = NULL,
     component.modes = NULL
   )
-  validate_inputs(m)
+  m <- validate_inputs(m)
   class(m) <- append("prophet", class(m))
   if ((fit) && (!is.null(df))) {
     m <- fit.prophet(m, df, ...)
@@ -143,6 +148,8 @@ prophet <- function(df = NULL,
 #' Validates the inputs to Prophet.
 #'
 #' @param m Prophet object.
+#'
+#' @return The Prophet object.
 #'
 #' @keywords internal
 validate_inputs <- function(m) {
@@ -159,6 +166,7 @@ validate_inputs <- function(m) {
     if (!(exists('ds', where = m$holidays))) {
       stop('Holidays dataframe must have ds field.')
     }
+    m$holidays$ds <- as.Date(m$holidays$ds)
     has.lower <- exists('lower_window', where = m$holidays)
     has.upper <- exists('upper_window', where = m$holidays)
     if (has.lower + has.upper == 1) {
@@ -180,6 +188,7 @@ validate_inputs <- function(m) {
   if (!(m$seasonality.mode %in% c('additive', 'multiplicative'))) {
     stop("seasonality.mode must be 'additive' or 'multiplicative'")
   }
+  return(m)
 }
 
 #' Validates the name of a seasonality, holiday, or regressor.
@@ -213,6 +222,11 @@ validate_column_name <- function(
   if(check_holidays & !is.null(m$holidays) &
      (name %in% unique(m$holidays$holiday))){
     stop("Name ", name, " already used for a holiday.")
+  }
+  if(check_holidays & !is.null(m$country_holidays)){
+    if(name %in% get_holiday_names(m$country_holidays)){
+      stop("Name ", name, " is a holiday name in ", m$country_holidays, ".")
+    }
   }
   if(check_seasonalities & (!is.null(m$seasonalities[[name]]))){
     stop("Name ", name, " already used for a seasonality.")
@@ -344,6 +358,10 @@ setup_dataframe <- function(m, df, initialize_scales = FALSE) {
     if (!(name %in% colnames(df))) {
       stop('Regressor "', name, '" missing from dataframe')
     }
+    df[[name]] <- as.numeric(df[[name]])
+    if (anyNA(df[[name]])) {
+      stop('Found NaN in column ', name)
+    }
   }
 
   df <- df %>%
@@ -373,12 +391,8 @@ setup_dataframe <- function(m, df, initialize_scales = FALSE) {
   }
 
   for (name in names(m$extra_regressors)) {
-    df[[name]] <- as.numeric(df[[name]])
     props <- m$extra_regressors[[name]]
     df[[name]] <- (df[[name]] - props$mu) / props$std
-    if (anyNA(df[[name]])) {
-      stop('Found NaN in column ', name)
-    }
   }
   return(list("m" = m, "df" = df))
 }
@@ -519,10 +533,45 @@ make_seasonality_features <- function(dates, period, series.order, prefix) {
   return(data.frame(features))
 }
 
+#' Construct a dataframe of holiday dates.
+#'
+#' @param m Prophet object.
+#' @param dates Vector with dates used for computing seasonality.
+#'
+#' @return A dataframe of holiday dates, in holiday dataframe format used in
+#'  initialization.
+#'
+#' @importFrom dplyr "%>%"
+#' @keywords internal
+construct_holiday_dataframe <- function(m, dates) {
+  all.holidays <- data.frame()
+  if (!is.null(m$holidays)){
+    all.holidays <- m$holidays
+  }
+  if (!is.null(m$country_holidays)) {
+    year.list <- as.numeric(unique(format(dates, "%Y")))
+    country.holidays.df <- make_holidays_df(year.list, m$country_holidays)
+    all.holidays <- suppressWarnings(dplyr::bind_rows(all.holidays, country.holidays.df))
+  }
+  # If the model has already been fit with a certain set of holidays,
+  # make sure we are using those same ones.
+  if (!is.null(m$train.holiday.names)) {
+    row.to.keep <- which(all.holidays$holiday %in% m$train.holiday.names)
+    all.holidays <- all.holidays[row.to.keep,]
+    holidays.to.add <- data.frame(
+      holiday=setdiff(m$train.holiday.names, all.holidays$holiday)
+    )
+    all.holidays <- suppressWarnings(dplyr::bind_rows(all.holidays, holidays.to.add))
+  }
+  return(all.holidays)
+}
+
 #' Construct a matrix of holiday features.
 #'
 #' @param m Prophet object.
 #' @param dates Vector with dates used for computing seasonality.
+#' @param holidays Dataframe containing holidays, as returned by
+#'  construct_holiday_dataframe.
 #'
 #' @return A list with entries
 #'  holiday.features: dataframe with a column for each holiday.
@@ -531,13 +580,13 @@ make_seasonality_features <- function(dates, period, series.order, prefix) {
 #'
 #' @importFrom dplyr "%>%"
 #' @keywords internal
-make_holiday_features <- function(m, dates) {
+make_holiday_features <- function(m, dates, holidays) {
   # Strip dates to be just days, for joining on holidays
   dates <- set_date(format(dates, "%Y-%m-%d"))
-  wide <- m$holidays %>%
+  wide <- holidays %>%
     dplyr::mutate(ds = set_date(ds)) %>%
     dplyr::group_by(holiday, ds) %>%
-    dplyr::filter(row_number() == 1) %>%
+    dplyr::filter(dplyr::row_number() == 1) %>%
     dplyr::do({
       if (exists('lower_window', where = .) && !is.na(.$lower_window)
           && !is.na(.$upper_window)) {
@@ -555,16 +604,17 @@ make_holiday_features <- function(m, dates) {
   holiday.features <- data.frame(ds = set_date(dates)) %>%
     dplyr::left_join(wide, by = 'ds') %>%
     dplyr::select(-ds)
-
+  # Make sure column order is consistent
+  holiday.features <- holiday.features %>% dplyr::select(sort(names(.)))
   holiday.features[is.na(holiday.features)] <- 0
 
   # Prior scales
-  if (!('prior_scale' %in% colnames(m$holidays))) {
-    m$holidays$prior_scale <- m$holidays.prior.scale
+  if (!('prior_scale' %in% colnames(holidays))) {
+    holidays$prior_scale <- m$holidays.prior.scale
   }
   prior.scales.list <- list()
-  for (name in unique(m$holidays$holiday)) {
-    df.h <- m$holidays[m$holidays$holiday == name, ]
+  for (name in unique(holidays$holiday)) {
+    df.h <- holidays[holidays$holiday == name, ]
     ps <- unique(df.h$prior_scale)
     if (length(ps) > 1) {
       stop('Holiday ', name, ' does not have a consistent prior scale ',
@@ -584,9 +634,14 @@ make_holiday_features <- function(m, dates) {
     sn <- strsplit(name, '_delim_', fixed = TRUE)[[1]][1]
     prior.scales <- c(prior.scales, prior.scales.list[[sn]])
   }
-  return(list(holiday.features = holiday.features,
+  holiday.names <- names(prior.scales.list)
+  if (is.null(m$train.holiday.names)){
+    m$train.holiday.names <- holiday.names
+  }
+  return(list(m = m,
+              holiday.features = holiday.features,
               prior.scales = prior.scales,
-              holiday.names = names(prior.scales.list)))
+              holiday.names = holiday.names))
 }
 
 #' Add an additional regressor to be used for fitting and predicting.
@@ -669,7 +724,6 @@ add_regressor <- function(
 #'
 #' @return The prophet model with the seasonality added.
 #'
-#' @importFrom dplyr "%>%"
 #' @export
 add_seasonality <- function(
   m, name, period, fourier.order, prior.scale = NULL, mode = NULL
@@ -701,6 +755,46 @@ add_seasonality <- function(
     prior.scale = ps,
     mode = mode
   )
+  return(m)
+}
+
+#' Add in built-in holidays for the specified country.
+#'
+#' These holidays will be included in addition to any specified on model
+#' initialization.
+#'
+#' Holidays will be calculated for arbitrary date ranges in the history
+#' and future. See the online documentation for the list of countries with
+#' built-in holidays.
+#'
+#' Built-in country holidays can only be set for a single country.
+#'
+#' @param m Prophet object.
+#' @param country_name Name of the country, like 'UnitedStates' or 'US'
+#'
+#' @return The prophet model with the holidays country set.
+#'
+#' @export
+add_country_holidays <- function(m, country_name) {
+  if (!is.null(m$history)) {
+    stop("Country holidays must be added prior to model fitting.")
+  }
+  if (!(country_name %in% generated_holidays$country)){
+      stop("Holidays in ", country_name," are not currently supported!")
+    }
+  # Validate names.
+  for (name in get_holiday_names(country_name)) {
+    # Allow merging with existing holidays
+    validate_column_name(m, name, check_holidays = FALSE)
+  }
+  # Set the holidays.
+  if (!is.null(m$country_holidays)) {
+    message(
+      'Changing country holidays from ', m$country_holidays, ' to ',
+      country_name
+    )
+  }
+  m$country_holidays = country_name
   return(m)
 }
 
@@ -738,12 +832,15 @@ make_all_seasonality_features <- function(m, df) {
   }
 
   # Holiday features
-  if (!is.null(m$holidays)) {
-    hf <- make_holiday_features(m, df$ds)
-    seasonal.features <- cbind(seasonal.features, hf$holiday.features)
-    prior.scales <- c(prior.scales, hf$prior.scales)
+  holidays <- construct_holiday_dataframe(m, df$ds)
+  if (nrow(holidays) > 0) {
+    out <- make_holiday_features(m, df$ds, holidays)
+    m <- out$m
+    seasonal.features <- cbind(seasonal.features, out$holiday.features)
+    prior.scales <- c(prior.scales, out$prior.scales)
     modes[[m$seasonality.mode]] <- c(
-      modes[[m$seasonality.mode]], hf$holiday.names)
+      modes[[m$seasonality.mode]], out$holiday.names
+    )
   }
 
   # Additional regressors
@@ -761,7 +858,8 @@ make_all_seasonality_features <- function(m, df) {
   }
 
   components.list <- regressor_column_matrix(m, seasonal.features, modes)
-  return(list(seasonal.features = seasonal.features,
+  return(list(m = m,
+              seasonal.features = seasonal.features,
               prior.scales = prior.scales,
               component.cols = components.list$component.cols,
               modes = components.list$modes))
@@ -787,14 +885,14 @@ make_all_seasonality_features <- function(m, df) {
 #' @keywords internal
 regressor_column_matrix <- function(m, seasonal.features, modes) {
   components <- dplyr::data_frame(component = colnames(seasonal.features)) %>%
-    dplyr::mutate(col = seq_len(n())) %>%
+    dplyr::mutate(col = seq_len(dplyr::n())) %>%
     tidyr::separate(component, c('component', 'part'), sep = "_delim_",
                     extra = "merge", fill = "right") %>%
     dplyr::select(col, component)
   # Add total for holidays
-  if(!is.null(m$holidays)){
+  if(!is.null(m$train.holiday.names)){
     components <- add_group_component(
-      components, 'holidays', unique(m$holidays$holiday))
+      components, 'holidays', unique(m$train.holiday.names))
   }
   # Add totals for additive and multiplicative components, and regressors
   for (mode in c('additive', 'multiplicative')) {
@@ -1061,6 +1159,7 @@ fit.prophet <- function(m, df, ...) {
   m$history <- history
   m <- set_auto_seasonalities(m)
   out2 <- make_all_seasonality_features(m, history)
+  m <- out2$m
   seasonal.features <- out2$seasonal.features
   prior.scales <- out2$prior.scales
   component.cols <- out2$component.cols
@@ -1115,28 +1214,30 @@ fit.prophet <- function(m, df, ...) {
     m$params$sigma_obs <- 0.
     n.iteration <- 1.
   } else if (m$mcmc.samples > 0) {
-    stan.fit <- rstan::sampling(
-      model,
+    args <- list(
+      object = model,
       data = dat,
       init = stan_init,
-      iter = m$mcmc.samples,
-      ...
+      iter = m$mcmc.samples
     )
+    args <- utils::modifyList(args, list(...))
+    stan.fit <- do.call(rstan::sampling, args)
     m$params <- rstan::extract(stan.fit)
     n.iteration <- length(m$params$k)
   } else {
-    stan.fit <- rstan::optimizing(
-      model,
+    args <- list(
+      object = model,
       data = dat,
       init = stan_init,
       iter = 1e4,
-      as_vector = FALSE,
-      ...
+      as_vector = FALSE
     )
+    args <- utils::modifyList(args, list(...))
+    stan.fit <- do.call(rstan::optimizing, args)
     m$params <- stan.fit$par
     n.iteration <- 1
   }
-
+  
   # Cast the parameters to have consistent form, whether full bayes or MAP
   for (name in c('delta', 'beta')){
     m$params[[name]] <- matrix(m$params[[name]], nrow = n.iteration)
@@ -1296,6 +1397,7 @@ predict_trend <- function(model, df) {
 #' @keywords internal
 predict_seasonal_components <- function(m, df) {
   out <- make_all_seasonality_features(m, df)
+  m <- out$m
   seasonal.features <- out$seasonal.features
   component.cols <- out$component.cols
   lower.p <- (1 - m$interval.width)/2
@@ -1396,11 +1498,12 @@ predict_uncertainty <- function(m, df) {
             na.rm = TRUE)),
     t(apply(t(sim.values$trend), 2, stats::quantile, c(lower.p, upper.p),
             na.rm = TRUE))
-  ) %>% dplyr::as_data_frame()
+  )
 
   colnames(intervals) <- paste(rep(c('yhat', 'trend'), each=2),
                                c('lower', 'upper'), sep = "_")
-  return(intervals)
+
+  return(dplyr::as_data_frame(intervals))
 }
 
 #' Simulate observations from the extrapolated generative model.

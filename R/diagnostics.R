@@ -165,6 +165,7 @@ prophet_copy <- function(m, cutoff = NULL) {
   )
   m2$extra_regressors <- m$extra_regressors
   m2$seasonalities <- m$seasonalities
+  m2$country_holidays <- m$country_holidays
   return(m2)
 }
 
