@@ -55,8 +55,12 @@ test_that("cross_validation_extra_regressors", {
   skip_if_not(Sys.getenv('R_ARCH') != '/i386')
   df <- DATA
   df$extra <- seq(0, nrow(df) - 1)
+  df$is_conditional_week <- seq(0, nrow(df) - 1) %/% 7 %% 2
   m <- prophet()
   m <- add_seasonality(m, name = 'monthly', period = 30.5, fourier.order = 5)
+  m <- add_seasonality(m, name = 'conditional_weekly', period = 7, 
+                       fourier.order = 3, prior.scale = 2., 
+                       condition.name = 'is_conditional_week')
   m <- add_regressor(m, 'extra')
   m <- fit.prophet(m, df)
   df.cv <- cross_validation(
@@ -87,16 +91,20 @@ test_that("performance_metrics", {
   df_cv <- cross_validation(
     m, horizon = 4, units = "days", period = 10, initial = 90)
   # Aggregation level none
-  df_none <- performance_metrics(df_cv, rolling_window = 0)
+  df_none <- performance_metrics(df_cv, rolling_window = -1)
   expect_true(all(
     sort(colnames(df_none))
     == sort(c('horizon', 'coverage', 'mae', 'mape', 'mse', 'rmse'))
   ))
   expect_equal(nrow(df_none), 16)
+  # Aggregation level 0
+  df_0 <- performance_metrics(df_cv, rolling_window = 0)
+  expect_equal(nrow(df_0), 4)
+  expect_equal(length(unique(df_0$h)), 4)
   # Aggregation level 0.2
   df_horizon <- performance_metrics(df_cv, rolling_window = 0.2)
+  expect_equal(nrow(df_horizon), 4)
   expect_equal(length(unique(df_horizon$horizon)), 4)
-  expect_equal(nrow(df_horizon), 14)
   # Aggregation level all
   df_all <- performance_metrics(df_cv, rolling_window = 1)
   expect_equal(nrow(df_all), 1)
@@ -108,6 +116,38 @@ test_that("performance_metrics", {
   expect_true(all(
     sort(colnames(df_horizon)) == sort(c('coverage', 'mse', 'horizon'))
   ))
+  # Skip MAPE
+  df_cv$y[1] <- 0.
+  df_horizon <- performance_metrics(df_cv, metrics = c('coverage', 'mape'))
+  expect_true(all(
+    sort(colnames(df_horizon)) == sort(c('coverage', 'horizon'))
+  ))
+  df_horizon <- performance_metrics(df_cv, metrics = c('mape'))
+  expect_null(df_horizon)
+})
+
+test_that("rolling_mean", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  x <- 0:9
+  h <- 0:9
+  df <- prophet:::rolling_mean_by_h(x=x, h=h, w=1, name='x')
+  expect_equal(x, df$x)
+  expect_equal(h, df$horizon)
+
+  df <- prophet:::rolling_mean_by_h(x=x, h=h, w=4, name='x')
+  expect_equal(x[4:10] - 1.5, df$x)
+  expect_equal(3:9, df$horizon)
+
+  h <- c(1., 2., 3., 4., 4., 4., 4., 4., 7., 7.)
+  x.true <- c(1., 5., 22/3)
+  h.true <- c(3., 4., 7.)
+  df <- prophet:::rolling_mean_by_h(x=x, h=h, w=3, name='x')
+  expect_equal(x.true, df$x)
+  expect_equal(h.true, df$horizon)
+
+  df <- prophet:::rolling_mean_by_h(x=x, h=h, w=10, name='x')
+  expect_equal(c(7.), df$horizon)
+  expect_equal(c(4.5), df$x)
 })
 
 test_that("copy", {

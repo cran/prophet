@@ -363,7 +363,19 @@ setup_dataframe <- function(m, df, initialize_scales = FALSE) {
       stop('Found NaN in column ', name)
     }
   }
-
+  for (name in names(m$seasonalities)) {
+    condition.name = m$seasonalities[[name]]$condition.name
+    if (!is.null(condition.name)) {
+      if (!(condition.name %in% colnames(df))) {
+        stop('Condition "', name, '" missing from dataframe')
+      }
+      if(!all(df[[condition.name]] %in% c(FALSE,TRUE))) {
+        stop('Found non-boolean in column ', name)
+      }
+      df[[condition.name]] <- as.logical(df[[condition.name]])
+    }
+  }
+  
   df <- df %>%
     dplyr::arrange(ds)
 
@@ -380,6 +392,9 @@ setup_dataframe <- function(m, df, initialize_scales = FALSE) {
   if (m$growth == 'logistic') {
     if (!(exists('cap', where=df))) {
       stop('Capacities must be supplied for logistic growth.')
+    }
+    if (any(df$cap <= df$floor)) {
+      stop('cap must be greater than floor (which defaults to 0).')
     }
     df <- df %>%
       dplyr::mutate(cap_scaled = (cap - floor) / m$y.scale)
@@ -714,6 +729,10 @@ add_regressor <- function(
 #' specified, m$seasonality.mode will be used (defaults to 'additive').
 #' Additive means the seasonality will be added to the trend, multiplicative
 #' means it will multiply the trend.
+#' 
+#' If condition.name is provided, the dataframe passed to `fit` and `predict`
+#' should have a column with the specified condition.name containing booleans
+#' which decides when to apply seasonality.
 #'
 #' @param m Prophet object.
 #' @param name String name of the seasonality component.
@@ -721,12 +740,14 @@ add_regressor <- function(
 #' @param fourier.order Int number of Fourier components to use.
 #' @param prior.scale Optional float prior scale for this component.
 #' @param mode Optional 'additive' or 'multiplicative'.
+#' @param condition.name String name of the seasonality condition.
 #'
 #' @return The prophet model with the seasonality added.
 #'
 #' @export
 add_seasonality <- function(
-  m, name, period, fourier.order, prior.scale = NULL, mode = NULL
+  m, name, period, fourier.order, prior.scale = NULL, mode = NULL, 
+  condition.name = NULL
 ) {
   if (!is.null(m$history)) {
     stop("Seasonality must be added prior to model fitting.")
@@ -749,11 +770,15 @@ add_seasonality <- function(
   if (!(mode %in% c('additive', 'multiplicative'))) {
     stop("mode must be 'additive' or 'multiplicative'")
   }
+  if (!is.null(condition.name)) {
+    validate_column_name(m, condition.name)
+  }
   m$seasonalities[[name]] <- list(
     period = period,
     fourier.order = fourier.order,
     prior.scale = ps,
-    mode = mode
+    mode = mode,
+    condition.name = condition.name
   )
   return(m)
 }
@@ -825,6 +850,9 @@ make_all_seasonality_features <- function(m, df) {
     props <- m$seasonalities[[name]]
     features <- make_seasonality_features(
       df$ds, props$period, props$fourier.order, name)
+    if (!is.null(props$condition.name)) {
+      features[!df[[props$condition.name]],] <- 0
+    }
     seasonal.features <- cbind(seasonal.features, features)
     prior.scales <- c(prior.scales,
                       props$prior.scale * rep(1, ncol(features)))
@@ -1026,7 +1054,8 @@ set_auto_seasonalities <- function(m) {
       period = 365.25,
       fourier.order = fourier.order,
       prior.scale = m$seasonality.prior.scale,
-      mode = m$seasonality.mode
+      mode = m$seasonality.mode,
+      condition.name = NULL
     )
   }
 
@@ -1038,7 +1067,8 @@ set_auto_seasonalities <- function(m) {
       period = 7,
       fourier.order = fourier.order,
       prior.scale = m$seasonality.prior.scale,
-      mode = m$seasonality.mode
+      mode = m$seasonality.mode,
+      condition.name = NULL
     )
   }
 
@@ -1050,7 +1080,8 @@ set_auto_seasonalities <- function(m) {
       period = 1,
       fourier.order = fourier.order,
       prior.scale = m$seasonality.prior.scale,
-      mode = m$seasonality.mode
+      mode = m$seasonality.mode,
+      condition.name = NULL
     )
   }
   return(m)
@@ -1229,11 +1260,19 @@ fit.prophet <- function(m, df, ...) {
       object = model,
       data = dat,
       init = stan_init,
+      algorithm = if(dat$T < 100) {'Newton'} else {'LBFGS'},
       iter = 1e4,
       as_vector = FALSE
     )
     args <- utils::modifyList(args, list(...))
     stan.fit <- do.call(rstan::optimizing, args)
+    if (stan.fit$return_code != 0) {
+      message(
+        'Optimization terminated abnormally. Falling back to Newton optimizer.'
+      )
+      args$algorithm = 'Newton'
+      stan.fit <- do.call(rstan::optimizing, args)
+    }
     m$params <- stan.fit$par
     n.iteration <- 1
   }
@@ -1277,6 +1316,9 @@ fit.prophet <- function(m, df, ...) {
 #'
 #' @export
 predict.prophet <- function(object, df = NULL, ...) {
+  if (is.null(object$history)) {
+    stop("Model must be fit before predictions can be made.")
+  }
   if (is.null(df)) {
     df <- object$history
   } else {
