@@ -1,9 +1,7 @@
-## Copyright (c) 2017-present, Facebook, Inc.
-## All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 
-## This source code is licensed under the BSD-style license found in the
-## LICENSE file in the root directory of this source tree. An additional grant
-## of patent rights can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 ## Makes R CMD CHECK happy due to dplyr syntax below
 globalVariables(c(
@@ -101,6 +99,11 @@ cross_validation <- function(
         'is larger than initial window. Consider increasing initial.'))
     }
   }
+  
+  predict_columns <- c('ds', 'yhat')
+  if (model$uncertainty.samples){
+    predict_columns <- append(predict_columns, c('yhat_lower', 'yhat_upper'))
+  }
 
   cutoffs <- generate_cutoffs(df, horizon.dt, initial.dt, period.dt)
 
@@ -114,7 +117,8 @@ cross_validation <- function(
     if (nrow(history.c) < 2) {
       stop('Less than two datapoints before cutoff. Increase initial window.')
     }
-    m <- fit.prophet(m, history.c)
+    fit.args <- c(list(m=m, df=history.c), model$fit.kwargs)
+    m <- do.call(fit.prophet, fit.args)
     # Calculate yhat
     df.predict <- dplyr::filter(df, ds > cutoff, ds <= cutoff + horizon.dt)
     # Get the columns for the future dataframe
@@ -135,8 +139,9 @@ cross_validation <- function(
     future <- df.predict[columns]
     yhat <- stats::predict(m, future)
     # Merge yhat, y, and cutoff.
-    df.c <- dplyr::inner_join(df.predict, yhat, by = "ds")
-    df.c <- dplyr::select(df.c, ds, y, yhat, yhat_lower, yhat_upper)
+    df.c <- dplyr::inner_join(df.predict, yhat[predict_columns], by = "ds")
+    df.c <- df.c[c(predict_columns, "y")]
+    df.c <- dplyr::select(df.c, y, predict_columns)
     df.c$cutoff <- cutoff
     predicts <- rbind(predicts, df.c)
   }
@@ -237,12 +242,16 @@ performance_metrics <- function(df, metrics = NULL, rolling_window = 0.1) {
   if (is.null(metrics)) {
     metrics <- valid_metrics
   }
+  if ((!('yhat_lower' %in% colnames(df)) | !('yhat_upper' %in% colnames(df))) & ('coverage' %in% metrics)){
+    metrics <- metrics[metrics != 'coverage']
+  }
+
   if (length(metrics) != length(unique(metrics))) {
     stop('Input metrics must be an array of unique values.')
   }
   if (!all(metrics %in% valid_metrics)) {
     stop(
-      paste('Valid values for metrics are:', paste(metrics, collapse = ", "))
+      paste('Valid values for metrics are:', paste(valid_metrics, collapse = ", "))
     )
   }
   df_m <- df

@@ -1,9 +1,7 @@
-## Copyright (c) 2017-present, Facebook, Inc.
-## All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 
-## This source code is licensed under the BSD-style license found in the
-## LICENSE file in the root directory of this source tree. An additional grant
-## of patent rights can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 ## Makes R CMD CHECK happy due to dplyr syntax below
 globalVariables(c(
@@ -64,7 +62,8 @@ globalVariables(c(
 #'  If mcmc.samples>0, this will be integrated over all model parameters,
 #'  which will include uncertainty in seasonality.
 #' @param uncertainty.samples Number of simulated draws used to estimate
-#'  uncertainty intervals.
+#'  uncertainty intervals. Settings this value to 0 or False will disable
+#'  uncertainty estimation and speed up the calculation.
 #' @param fit Boolean, if FALSE the model is initialized but not fit.
 #' @param ... Additional arguments, passed to \code{\link{fit.prophet}}
 #'
@@ -135,7 +134,8 @@ prophet <- function(df = NULL,
     history.dates = NULL,
     train.holiday.names = NULL,
     train.component.cols = NULL,
-    component.modes = NULL
+    component.modes = NULL,
+    fit.kwargs = list()
   )
   m <- validate_inputs(m)
   class(m) <- append("prophet", class(m))
@@ -236,52 +236,42 @@ validate_column_name <- function(
   }
 }
 
-
-#' Load compiled Stan model
-#'
-#' @param model String 'linear' or 'logistic' to specify a linear or logistic
-#'  trend.
-#'
-#' @return Stan model.
-#'
-#' @keywords internal
-get_prophet_stan_model <- function() {
-  ## If the cached model doesn't work, just compile a new one.
-  tryCatch({
-    binary <- system.file(
-      'libs',
-      Sys.getenv('R_ARCH'),
-      'prophet_stan_model.RData',
-      package = 'prophet',
-      mustWork = TRUE
-    )
-    load(binary)
-    obj.name <- 'model.stanm'
-    stanm <- eval(parse(text = obj.name))
-
-    ## Should cause an error if the model doesn't work.
-    stanm@mk_cppmodule(stanm)
-    stanm
-  }, error = function(cond) {
-    compile_stan_model()
-  })
-}
-
 #' Compile Stan model
-#'
-#' @param model String 'linear' or 'logistic' to specify a linear or logistic
-#'  trend.
 #'
 #' @return Stan model.
 #'
 #' @keywords internal
 compile_stan_model <- function() {
+  packageStartupMessage('Compiling model (this will take a few minutes...)')
+  packageStartupMessage(
+    'If this is the first time fitting a model since package install, this is normal. ',
+    'You should not see this message more than once after install.'
+  )
+
+  if (.Platform$OS.type == "windows") {
+    dest <- file.path(path.package("prophet"), 'libs', .Platform$r_arch)
+  } else {
+    dest <- file.path(path.package("prophet"), 'libs')
+  }  
+  dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+
+  packageStartupMessage(paste('Writing model to:', dest))
+  packageStartupMessage(paste('Compiling using binary:', R.home('bin')))
+
   fn <- 'stan/prophet.stan'
-
   stan.src <- system.file(fn, package = 'prophet', mustWork = TRUE)
-  stanc <- rstan::stanc(stan.src)
+  model.binary <- file.path(dest, 'prophet_stan_model.RData')
 
-  return(rstan::stan_model(stanc_ret = stanc, model_name = 'prophet_model'))
+  stanc <- rstan::stanc(stan.src)
+  model.stanm <- rstan::stan_model(
+    stanc_ret = stanc,
+    model_name = 'prophet_model'
+  )
+  save('model.stanm', file = model.binary)
+  packageStartupMessage('------ Model successfully compiled!')
+  packageStartupMessage('You can ignore any compiler warnings above.')
+  assign(".prophet.stan.model", model.stanm, envir = prophet_model_env)
+  return(model.stanm)
 }
 
 #' Convert date vector
@@ -344,9 +334,9 @@ time_diff <- function(ds1, ds2, units = "days") {
 setup_dataframe <- function(m, df, initialize_scales = FALSE) {
   if (exists('y', where=df)) {
     df$y <- as.numeric(df$y)
-  }
-  if (any(is.infinite(df$y))) {
-    stop("Found infinity in column y.")
+    if (any(is.infinite(df$y))) {
+      stop("Found infinity in column y.")
+    }
   }
   df$ds <- set_date(df$ds)
   if (anyNA(df$ds)) {
@@ -611,7 +601,7 @@ make_holiday_features <- function(m, dates, holidays) {
       }
       names <- paste(.$holiday, '_delim_', ifelse(offsets < 0, '-', '+'),
                      abs(offsets), sep = '')
-      dplyr::data_frame(ds = .$ds + offsets * 24 * 3600, holiday = names)
+      dplyr::tibble(ds = .$ds + offsets * 24 * 3600, holiday = names)
     }) %>%
     dplyr::mutate(x = 1.) %>%
     tidyr::spread(holiday, x, fill = 0)
@@ -691,6 +681,11 @@ add_regressor <- function(
   if (!is.null(m$history)) {
     stop('Regressors must be added prior to model fitting.')
   }
+  if (make.names(name, allow_ = TRUE) != name) {
+    stop("You have provided a name that is not syntactically valid in R, ", name, ". ",
+         "A syntactically valid name consists of letters, numbers and the dot or underline, ",
+         "characters and starts with a letter or the dot not followed by a number.")
+  }
   validate_column_name(m, name, check_regressors = FALSE)
   if (is.null(prior.scale)) {
     prior.scale <- m$holidays.prior.scale
@@ -699,7 +694,7 @@ add_regressor <- function(
     mode <- m$seasonality.mode
   }
   if(prior.scale <= 0) {
-    stop("Prior scale must be > 0")
+    stop("Prior scale must be > 0.")
   }
   if (!(mode %in% c('additive', 'multiplicative'))) {
     stop("mode must be 'additive' or 'multiplicative'")
@@ -754,6 +749,11 @@ add_seasonality <- function(
   }
   if (!(name %in% c('daily', 'weekly', 'yearly'))) {
     # Allow overriding built-in seasonalities
+    if (make.names(name, allow_ = TRUE) != name) {
+      stop("You have provided a name that is not syntactically valid in R, ", name, ". ",
+           "A syntactically valid name consists of letters, numbers and the dot or underline, ",
+           "characters and starts with a letter or the dot not followed by a number.")
+    }
     validate_column_name(m, name, check_seasonalities = FALSE)
   }
   if (is.null(prior.scale)) {
@@ -762,7 +762,10 @@ add_seasonality <- function(
     ps <- prior.scale
   }
   if (ps <= 0) {
-    stop('Prior scale must be > 0')
+    stop('Prior scale must be > 0.')
+  }
+  if (fourier.order <= 0) {
+    stop('Fourier order must be > 0.')
   }
   if (is.null(mode)) {
     mode <- m$seasonality.mode
@@ -912,7 +915,7 @@ make_all_seasonality_features <- function(m, df) {
 #'
 #' @keywords internal
 regressor_column_matrix <- function(m, seasonal.features, modes) {
-  components <- dplyr::data_frame(component = colnames(seasonal.features)) %>%
+  components <- dplyr::tibble(component = colnames(seasonal.features)) %>%
     dplyr::mutate(col = seq_len(dplyr::n())) %>%
     tidyr::separate(component, c('component', 'part'), sep = "_delim_",
                     extra = "merge", fill = "right") %>%
@@ -1196,6 +1199,7 @@ fit.prophet <- function(m, df, ...) {
   component.cols <- out2$component.cols
   m$train.component.cols <- component.cols
   m$component.modes <- out2$modes
+  m$fit.kwargs <- list(...)
 
   m <- set_changepoints(m)
 
@@ -1224,10 +1228,10 @@ fit.prophet <- function(m, df, ...) {
     kinit <- logistic_growth_init(history)
   }
 
-  if (exists(".prophet.stan.model")) {
-    model <- .prophet.stan.model
+  if (exists(".prophet.stan.model", where = prophet_model_env)) {
+    model <- get('.prophet.stan.model', envir = prophet_model_env)
   } else {
-    model <- get_prophet_stan_model()
+    model <- compile_stan_model()
   }
 
   stan_init <- function() {
@@ -1252,8 +1256,8 @@ fit.prophet <- function(m, df, ...) {
       iter = m$mcmc.samples
     )
     args <- utils::modifyList(args, list(...))
-    stan.fit <- do.call(rstan::sampling, args)
-    m$params <- rstan::extract(stan.fit)
+    m$stan.fit <- do.call(rstan::sampling, args)
+    m$params <- rstan::extract(m$stan.fit)
     n.iteration <- length(m$params$k)
   } else {
     args <- list(
@@ -1265,15 +1269,15 @@ fit.prophet <- function(m, df, ...) {
       as_vector = FALSE
     )
     args <- utils::modifyList(args, list(...))
-    stan.fit <- do.call(rstan::optimizing, args)
-    if (stan.fit$return_code != 0) {
+    m$stan.fit <- do.call(rstan::optimizing, args)
+    if (m$stan.fit$return_code != 0) {
       message(
         'Optimization terminated abnormally. Falling back to Newton optimizer.'
       )
       args$algorithm = 'Newton'
-      stan.fit <- do.call(rstan::optimizing, args)
+      m$stan.fit <- do.call(rstan::optimizing, args)
     }
-    m$params <- stan.fit$par
+    m$params <- m$stan.fit$par
     n.iteration <- 1
   }
   
@@ -1331,8 +1335,12 @@ predict.prophet <- function(object, df = NULL, ...) {
 
   df$trend <- predict_trend(object, df)
   seasonal.components <- predict_seasonal_components(object, df)
-  intervals <- predict_uncertainty(object, df)
-
+  if (object$uncertainty.samples) {
+    intervals <- predict_uncertainty(object, df)
+  } else {
+    intervals <- NULL
+    }
+ 
   # Drop columns except ds, cap, floor, and trend
   cols <- c('ds', 'trend')
   if ('cap' %in% colnames(df)) {
@@ -1442,8 +1450,10 @@ predict_seasonal_components <- function(m, df) {
   m <- out$m
   seasonal.features <- out$seasonal.features
   component.cols <- out$component.cols
-  lower.p <- (1 - m$interval.width)/2
-  upper.p <- (1 + m$interval.width)/2
+  if (m$uncertainty.samples){
+    lower.p <- (1 - m$interval.width)/2
+    upper.p <- (1 + m$interval.width)/2
+  }
 
   X <- as.matrix(seasonal.features)
   component.predictions <- data.frame(matrix(ncol = 0, nrow = nrow(X)))
@@ -1455,10 +1465,12 @@ predict_seasonal_components <- function(m, df) {
       comp <- comp * m$y.scale
     }
     component.predictions[[component]] <- rowMeans(comp, na.rm = TRUE)
-    component.predictions[[paste0(component, '_lower')]] <- apply(
-      comp, 1, stats::quantile, lower.p, na.rm = TRUE)
-    component.predictions[[paste0(component, '_upper')]] <- apply(
-      comp, 1, stats::quantile, upper.p, na.rm = TRUE)
+    if (m$uncertainty.samples){
+      component.predictions[[paste0(component, '_lower')]] <- apply(
+        comp, 1, stats::quantile, lower.p, na.rm = TRUE)
+      component.predictions[[paste0(component, '_upper')]] <- apply(
+        comp, 1, stats::quantile, upper.p, na.rm = TRUE)
+    }
   }
   return(component.predictions)
 }
@@ -1545,7 +1557,7 @@ predict_uncertainty <- function(m, df) {
   colnames(intervals) <- paste(rep(c('yhat', 'trend'), each=2),
                                c('lower', 'upper'), sep = "_")
 
-  return(dplyr::as_data_frame(intervals))
+  return(dplyr::as_tibble(intervals))
 }
 
 #' Simulate observations from the extrapolated generative model.

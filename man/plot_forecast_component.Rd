@@ -4,8 +4,7 @@
 \alias{plot_forecast_component}
 \title{Plot a particular component of the forecast.}
 \usage{
-plot_forecast_component(m, fcst, name, uncertainty = TRUE,
-  plot_cap = FALSE)
+plot_forecast_component(m, fcst, name, uncertainty = TRUE, plot_cap = FALSE)
 }
 \arguments{
 \item{m}{Prophet model}
@@ -14,7 +13,8 @@ plot_forecast_component(m, fcst, name, uncertainty = TRUE,
 
 \item{name}{String name of the component to plot (column of fcst).}
 
-\item{uncertainty}{Boolean to plot uncertainty intervals.}
+\item{uncertainty}{Optional boolean to plot uncertainty intervals, which will 
+only be done if m$uncertainty.samples > 0.}
 
 \item{plot_cap}{Boolean indicating if the capacity should be shown in the
 figure, if available.}
