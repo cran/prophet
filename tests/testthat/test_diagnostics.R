@@ -56,6 +56,18 @@ test_that("cross_validation_logistic", {
   expect_equal(sum((df.merged$y.x - df.merged$y.y) ** 2), 0)
 })
 
+test_that("cross_validation_flat", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  df <- DATA
+  m <- prophet(df, growth = 'flat')
+  df.cv <- cross_validation(
+    m, horizon = 1, units = "days", period = 1, initial = 140)
+  expect_equal(length(unique(df.cv$cutoff)), 2)
+  expect_true(all(df.cv$cutoff < df.cv$ds))
+  df.merged <- dplyr::left_join(df.cv, m$history, by="ds")
+  expect_equal(sum((df.merged$y.x - df.merged$y.y) ** 2), 0)
+})
+
 test_that("cross_validation_extra_regressors", {
   skip_if_not(Sys.getenv('R_ARCH') != '/i386')
   df <- DATA
@@ -63,8 +75,8 @@ test_that("cross_validation_extra_regressors", {
   df$is_conditional_week <- seq(0, nrow(df) - 1) %/% 7 %% 2
   m <- prophet()
   m <- add_seasonality(m, name = 'monthly', period = 30.5, fourier.order = 5)
-  m <- add_seasonality(m, name = 'conditional_weekly', period = 7, 
-                       fourier.order = 3, prior.scale = 2., 
+  m <- add_seasonality(m, name = 'conditional_weekly', period = 7,
+                       fourier.order = 3, prior.scale = 2.,
                        condition.name = 'is_conditional_week')
   m <- add_regressor(m, 'extra')
   m <- fit.prophet(m, df)
@@ -90,6 +102,21 @@ test_that("cross_validation_default_value_check", {
   expect_equal(sum(dplyr::select(df.cv1 - df.cv2, y, yhat)), 0)
 })
 
+test_that("cross_validation_custom_cutoffs", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  m <- prophet(DATA)
+  # When specify a list of cutoffs the cutoff dates in df.cv1
+  # are those specified
+  cutoffs=c(as.Date('2012-07-31'), as.Date('2012-08-31'))
+  df.cv <-cross_validation(
+    m, horizon = 32, units = "days", period = 10, cutoffs=cutoffs)
+  expect_equal(length(unique(df.cv$cutoff)), 2)
+  # test this works ok when periods is NULL
+  df.cv <-cross_validation(
+    m, horizon = 32, units = "days", cutoffs=cutoffs)
+  expect_equal(length(unique(df.cv$cutoff)), 2)
+})
+
 test_that("cross_validation_uncertainty_disabled", {
   skip_if_not(Sys.getenv('R_ARCH') != '/i386')
   for (uncertainty in c(0, FALSE)) {
@@ -113,7 +140,7 @@ test_that("performance_metrics", {
   df_none <- performance_metrics(df_cv, rolling_window = -1)
   expect_true(all(
     sort(colnames(df_none))
-    == sort(c('horizon', 'coverage', 'mae', 'mape', 'mse', 'rmse'))
+    == sort(c('horizon', 'mse', 'rmse', 'mae', 'mape', 'mdape', 'smape', 'coverage'))
   ))
   expect_equal(nrow(df_none), 16)
   # Aggregation level 0
@@ -135,7 +162,7 @@ test_that("performance_metrics", {
   expect_true(all(
     sort(colnames(df_horizon)) == sort(c('coverage', 'mse', 'horizon'))
   ))
-  # Skip MAPE
+  # Skip MAPE and MDAPE
   df_cv$y[1] <- 0.
   df_horizon <- performance_metrics(df_cv, metrics = c('coverage', 'mape'))
   expect_true(all(
@@ -146,7 +173,7 @@ test_that("performance_metrics", {
   # List of metrics containing non valid metrics
   expect_error(
      performance_metrics(df_cv, metrics = c('mse', 'error_metric')),
-     'Valid values for metrics are: mse, rmse, mae, mape, coverage'
+     'Valid values for metrics are: mse, rmse, mae, mape, mdape, smape, coverage'
   )
 })
 
@@ -174,13 +201,40 @@ test_that("rolling_mean", {
   expect_equal(c(4.5), df$x)
 })
 
+
+test_that("rolling_median", {
+  skip_if_not(Sys.getenv('R_ARCH') != '/i386')
+  x <- 0:9
+  h <- 0:9
+  df <- prophet:::rolling_median_by_h(x=x, h=h, w=1, name='x')
+  expect_equal(x, df$x)
+  expect_equal(h, df$horizon)
+
+  df <- prophet:::rolling_median_by_h(x=x, h=h, w=4, name='x')
+  x.true <- x[4:10] - 1.5
+  expect_equal(x.true, df$x)
+  expect_equal(3:9, df$horizon)
+
+  h <- c(1., 2., 3., 4., 4., 4., 4., 4., 7., 7.)
+  x.true <- c(1., 5., 8.)
+  h.true <- c(3., 4., 7.)
+  df <- prophet:::rolling_median_by_h(x=x, h=h, w=3, name='x')
+  expect_equal(x.true, df$x)
+  expect_equal(h.true, df$horizon)
+
+  df <- prophet:::rolling_median_by_h(x=x, h=h, w=10, name='x')
+  expect_equal(c(7.), df$horizon)
+  expect_equal(c(4.5), df$x)
+})
+
+
 test_that("copy", {
   skip_if_not(Sys.getenv('R_ARCH') != '/i386')
   df <- DATA_all
   df$cap <- 200.
   df$binary_feature <- c(rep(0, 255), rep(1, 255))
   inputs <- list(
-    growth = c('linear', 'logistic'),
+    growth = c('linear', 'logistic', 'flat'),
     yearly.seasonality = c(TRUE, FALSE),
     weekly.seasonality = c(TRUE, FALSE),
     daily.seasonality = c(TRUE, FALSE),
@@ -240,7 +294,7 @@ test_that("copy", {
   m1 <- add_regressor(m1, 'binary_feature')
   m1 <- fit.prophet(m1, df)
   m2 <- prophet:::prophet_copy(m1, cutoff)
-  changepoints <- changepoints[changepoints <= cutoff]
+  changepoints <- changepoints[changepoints < cutoff]
   expect_equal(prophet:::set_date(changepoints), m2$changepoints)
   expect_true('custom' %in% names(m2$seasonalities))
   expect_true('binary_feature' %in% names(m2$extra_regressors))

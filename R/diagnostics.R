@@ -5,7 +5,7 @@
 
 ## Makes R CMD CHECK happy due to dplyr syntax below
 globalVariables(c(
-  "ds", "y", "cap", "yhat", "yhat_lower", "yhat_upper"))
+  "ds", "y", "cap", "yhat", "yhat_lower", "yhat_upper", "size"))
 
 #' Generate cutoff dates
 #'
@@ -53,9 +53,9 @@ generate_cutoffs <- function(df, horizon, initial, period) {
 
 #' Cross-validation for time series.
 #'
-#' Computes forecasts from historical cutoff points. Beginning from
-#' (end - horizon), works backwards making cutoffs with a spacing of period
-#' until initial is reached.
+#' Computes forecasts from historical cutoff points which user can input.If
+#' not provided, these are computed beginning from (end - horizon), and working
+#' backwards making cutoffs with a spacing of period until initial is reached.
 #'
 #' When period is equal to the time interval of the data, this is the
 #' technique described in https://robjhyndman.com/hyndsight/tscv/ .
@@ -67,85 +67,123 @@ generate_cutoffs <- function(df, horizon, initial, period) {
 #'  horizon. If not provided, 0.5 * horizon is used.
 #' @param initial Integer size of the first training period. If not provided,
 #'  3 * horizon is used. Same units as horizon.
+#' @param cutoffs Vector of cutoff dates to be used during
+#'  cross-validtation. If not provided works beginning from (end - horizon),
+#'  works backwards making cutoffs with a spacing of period until initial is
+#'  reached.
 #'
 #' @return A dataframe with the forecast, actual value, and cutoff date.
 #'
 #' @export
 cross_validation <- function(
-    model, horizon, units, period = NULL, initial = NULL) {
+    model, horizon, units, period = NULL, initial = NULL, cutoffs=NULL) {
   df <- model$history
   horizon.dt <- as.difftime(horizon, units = units)
-  # Set period
-  if (is.null(period)) {
-    period <- 0.5 * horizon
+
+  predict_columns <- c('ds', 'yhat')
+  if (model$uncertainty.samples){
+    predict_columns <- append(predict_columns, c('yhat_lower', 'yhat_upper'))
   }
-  period.dt <- as.difftime(period, units = units)
   # Identify largest seasonality period
   period.max <- 0
   for (s in model$seasonalities) {
     period.max <- max(period.max, s$period)
   }
   seasonality.dt <- as.difftime(period.max, units = 'days')
-  # Set initial
-  if (is.null(initial)) {
-    initial.dt <- max(
-      as.difftime(3 * horizon, units = units),
-      seasonality.dt
-    )
-  } else {
-    initial.dt <- as.difftime(initial, units = units)
-    if (initial.dt < seasonality.dt) {
-      warning(paste0('Seasonality has period of ', period.max, ' days which ',
-        'is larger than initial window. Consider increasing initial.'))
+
+  if (is.null(cutoffs)){
+
+    # Set period
+    if (is.null(period)) {
+      period <- 0.5 * horizon
     }
-  }
-  
-  predict_columns <- c('ds', 'yhat')
-  if (model$uncertainty.samples){
-    predict_columns <- append(predict_columns, c('yhat_lower', 'yhat_upper'))
+    period.dt <- as.difftime(period, units = units)
+    # Set initial
+    if (is.null(initial)) {
+      initial.dt <- max(
+        as.difftime(3 * horizon, units = units),
+        seasonality.dt
+      )
+    }else {
+      initial.dt <- as.difftime(initial, units = units)
+    }
+    cutoffs <- generate_cutoffs(df, horizon.dt, initial.dt, period.dt)
+  }else{
+    cutoffs <- set_date(ds=cutoffs)
+    # Validation
+    if (min(cutoffs) <= min(df$ds)) {
+      stop('Minimum cutoff value is not strictly greater than min date in history')
+    }
+    end_date_minus_horizon <- max(df$ds) - horizon.dt
+    if (max(cutoffs) > end_date_minus_horizon) {
+      stop('Maximum cutoff value is greater than end date minus horizon')
+    }
+    initial.dt <- cutoffs[1] - min(df$ds)
   }
 
-  cutoffs <- generate_cutoffs(df, horizon.dt, initial.dt, period.dt)
+  # Check if the initial window  (that is, the amount of time between the
+  # start of the history and the first cutoff) is less than the
+  # maximum seasonality period
+  if (initial.dt < seasonality.dt) {
+    warning(paste0('Seasonality has period of ', period.max, ' days which ',
+      'is larger than initial window. Consider increasing initial.'))
+  }
 
   predicts <- data.frame()
   for (i in 1:length(cutoffs)) {
-    cutoff <- cutoffs[i]
-    # Copy the model
-    m <- prophet_copy(model, cutoff)
-    # Train model
-    history.c <- dplyr::filter(df, ds <= cutoff)
-    if (nrow(history.c) < 2) {
-      stop('Less than two datapoints before cutoff. Increase initial window.')
-    }
-    fit.args <- c(list(m=m, df=history.c), model$fit.kwargs)
-    m <- do.call(fit.prophet, fit.args)
-    # Calculate yhat
-    df.predict <- dplyr::filter(df, ds > cutoff, ds <= cutoff + horizon.dt)
-    # Get the columns for the future dataframe
-    columns <- 'ds'
-    if (m$growth == 'logistic') {
-      columns <- c(columns, 'cap')
-      if (m$logistic.floor) {
-        columns <- c(columns, 'floor')
-      }
-    }
-    columns <- c(columns, names(m$extra_regressors))
-    for (name in names(m$seasonalities)) {
-      condition.name = m$seasonalities[[name]]$condition.name
-      if (!is.null(condition.name)) {
-        columns <- c(columns, condition.name)
-      }
-    }
-    future <- df.predict[columns]
-    yhat <- stats::predict(m, future)
-    # Merge yhat, y, and cutoff.
-    df.c <- dplyr::inner_join(df.predict, yhat[predict_columns], by = "ds")
-    df.c <- df.c[c(predict_columns, "y")]
-    df.c <- dplyr::select(df.c, y, predict_columns)
-    df.c$cutoff <- cutoff
+    df.c <- single_cutoff_forecast(df, model, cutoffs[i], horizon.dt, predict_columns)
     predicts <- rbind(predicts, df.c)
   }
   return(predicts)
+}
+
+#' Forecast for a single cutoff.
+
+#' Used in cross_validation function when evaluating for multiple cutoffs.
+#'
+#' @param df Dataframe with history for cutoff.
+#' @param model Prophet model object.
+#' @param cutoff Datetime of cutoff.
+#' @param horizon.dt timediff forecast horizon.
+#' @param predict_columns Array of names of columns to be returned in output.
+#'
+#' @return Dataframe with forecast, actual value, and cutoff.
+#'
+#' @keywords internal
+single_cutoff_forecast <- function(df, model, cutoff, horizon.dt, predict_columns){
+  m <- prophet_copy(model, cutoff)
+  # Train model
+  history.c <- dplyr::filter(df, ds <= cutoff)
+  if (nrow(history.c) < 2) {
+    stop('Less than two datapoints before cutoff. Increase initial window.')
+  }
+  fit.args <- c(list(m=m, df=history.c), model$fit.kwargs)
+  m <- do.call(fit.prophet, fit.args)
+  # Calculate yhat
+  df.predict <- dplyr::filter(df, ds > cutoff, ds <= cutoff + horizon.dt)
+  # Get the columns for the future dataframe
+  columns <- 'ds'
+  if (m$growth == 'logistic') {
+    columns <- c(columns, 'cap')
+    if (m$logistic.floor) {
+      columns <- c(columns, 'floor')
+    }
+  }
+  columns <- c(columns, names(m$extra_regressors))
+  for (name in names(m$seasonalities)) {
+    condition.name = m$seasonalities[[name]]$condition.name
+    if (!is.null(condition.name)) {
+      columns <- c(columns, condition.name)
+    }
+  }
+  future <- df.predict[columns]
+  yhat <- stats::predict(m, future)
+  # Merge yhat, y, and cutoff.
+  df.c <- dplyr::inner_join(df.predict, yhat[predict_columns], by = "ds")
+  df.c <- df.c[c(predict_columns, "y")]
+  df.c <- dplyr::select(df.c, y, predict_columns)
+  df.c$cutoff <- cutoff
+  return(df.c)
 }
 
 #' Copy Prophet object.
@@ -167,7 +205,8 @@ prophet_copy <- function(m, cutoff = NULL) {
     changepoints <- m$changepoints
     if (!is.null(cutoff)) {
       cutoff <- set_date(cutoff)
-      changepoints <- changepoints[changepoints <= cutoff]
+      last_history_date <- max(m$history$ds[m$history$ds <= cutoff])
+      changepoints <- changepoints[changepoints < last_history_date]
     }
   } else {
     changepoints <- NULL
@@ -202,10 +241,12 @@ prophet_copy <- function(m, cutoff = NULL) {
 #'
 #' Computes a suite of performance metrics on the output of cross-validation.
 #' By default the following metrics are included:
-#' 'mse': mean squared error
-#' 'rmse': root mean squared error
-#' 'mae': mean absolute error
-#' 'mape': mean percent error
+#' 'mse': mean squared error,
+#' 'rmse': root mean squared error,
+#' 'mae': mean absolute error,
+#' 'mape': mean percent error,
+#' 'mdape': median percent error,
+#' 'smape': symmetric mean absolute percentage error,
 #' 'coverage': coverage of the upper and lower intervals
 #'
 #' A subset of these can be specified by passing a list of names as the
@@ -230,7 +271,7 @@ prophet_copy <- function(m, cutoff = NULL) {
 #'
 #' @param df The dataframe returned by cross_validation.
 #' @param metrics An array of performance metrics to compute. If not provided,
-#'  will use c('mse', 'rmse', 'mae', 'mape', 'coverage').
+#'  will use c('mse', 'rmse', 'mae', 'mape', 'mdape', 'smape', 'coverage').
 #' @param rolling_window Proportion of data to use in each rolling window for
 #'  computing the metrics. Should be in [0, 1] to average.
 #'
@@ -238,7 +279,7 @@ prophet_copy <- function(m, cutoff = NULL) {
 #'
 #' @export
 performance_metrics <- function(df, metrics = NULL, rolling_window = 0.1) {
-  valid_metrics <- c('mse', 'rmse', 'mae', 'mape', 'coverage')
+  valid_metrics <- c('mse', 'rmse', 'mae', 'mape', 'mdape', 'smape', 'coverage')
   if (is.null(metrics)) {
     metrics <- valid_metrics
   }
@@ -260,6 +301,10 @@ performance_metrics <- function(df, metrics = NULL, rolling_window = 0.1) {
   if (('mape' %in% metrics) & (min(abs(df_m$y)) < 1e-8)) {
     message('Skipping MAPE because y close to 0')
     metrics <- metrics[metrics != 'mape']
+  }
+  if (('mdape' %in% metrics) & (min(abs(df_m$y)) < 1e-8)) {
+    message('Skipping MDAPE because y close to 0')
+    metrics <- metrics[metrics != 'mdape']
   }
   if (length(metrics) == 0) {
     return(NULL)
@@ -337,6 +382,64 @@ rolling_mean_by_h <- function(x, h, w, name) {
   return(res)
 }
 
+
+#' Compute a rolling median of x, after first aggregating by h
+#'
+#' Right-aligned. Computes a single median for each unique value of h. Each median
+#' is over at least w samples.
+#'
+#' For each h where there are fewer than w samples, we take samples from the previous h,
+#  moving backwards. (In other words, we ~ assume that the x's are shuffled within each h.)
+#'
+#' @param x Array.
+#' @param h Array of horizon for each value in x.
+#' @param w Integer window size (number of elements).
+#' @param name String name for metric in result dataframe.
+#'
+#' @return Dataframe with columns horizon and name, the rolling median of x.
+#'
+#' @importFrom dplyr "%>%"
+rolling_median_by_h <- function(x, h, w, name) {
+  # Aggregate over h
+  df <- data.frame(x=x, h=h)
+  grouped <- df %>% dplyr::group_by(h)
+  df2 <- grouped %>%
+    dplyr::summarise(size=dplyr::n()) %>%
+    dplyr::arrange(h) %>%
+    dplyr::select(h, size)
+
+  hs <- df2$h
+  res <- data.frame(horizon=c())
+  res[[name]] <- c()
+
+  # Start from the right and work backwards
+  i <- length(hs)
+  while (i > 0) {
+    h_i <- hs[i]
+    xs <- grouped  %>%
+      dplyr::filter(h==h_i)
+    xs <- xs$x
+
+    next_idx_to_add = which.max(h==h_i) - 1
+
+    while ((length(xs) < w) & (next_idx_to_add > 0)) {
+      # Include points from the previous horizon. All of them if still less
+      # than w, otherwise just enough to get to w.
+      xs <- c(x[next_idx_to_add], xs)
+      next_idx_to_add = next_idx_to_add - 1
+    }
+    if (length(xs) < w) {
+      # Ran out of horizons before enough points.
+      break
+    }
+    res.i <- data.frame(horizon=hs[i])
+    res.i[[name]] <- stats::median(xs)
+    res <- rbind(res.i, res)
+    i <- i - 1
+  }
+  return(res)
+}
+
 # The functions below specify performance metrics for cross-validation results.
 # Each takes as input the output of cross_validation, and returns the statistic
 # as a dataframe, given a window size for rolling aggregation.
@@ -403,6 +506,42 @@ mape <- function(df, w) {
   }
   return(rolling_mean_by_h(x = ape, h = df$horizon, w = w, name = 'mape'))
 }
+
+
+#' Median absolute percent error
+#'
+#' @param df Cross-validation results dataframe.
+#' @param w Aggregation window size.
+#'
+#' @return Array of median absolute percent errors.
+#'
+#' @keywords internal
+mdape <- function(df, w) {
+  ape <- abs((df$y - df$yhat) / df$y)
+  if (w < 0) {
+    return(data.frame(horizon = df$horizon, mdape = ape))
+  }
+  return(rolling_median_by_h(x = ape, h = df$horizon, w = w, name = 'mdape'))
+}
+
+
+#' Symmetric mean absolute percentage error
+#' based on Chen and Yang (2004) formula
+#'
+#' @param df Cross-validation results dataframe.
+#' @param w Aggregation window size.
+#'
+#' @return Array of symmetric mean absolute percent errors.
+#'
+#' @keywords internal
+smape <- function(df, w) {
+  sape <- abs(df$y - df$yhat) / ((abs(df$y) + abs(df$yhat)) / 2)
+  if (w < 0) {
+    return(data.frame(horizon = df$horizon, smape = sape))
+  }
+  return(rolling_mean_by_h(x = sape, h = df$horizon, w = w, name = 'smape'))
+}
+
 
 #' Coverage
 #'
