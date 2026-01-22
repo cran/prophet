@@ -1,9 +1,10 @@
 Package: prophet
 Title: Automatic Forecasting Procedure
-Version: 1.0
-Date: 2021-03-08
+Version: 1.1.7
+Date: 2026-01-22
 Authors@R: c(
-  person("Sean", "Taylor", email = "sjtz@pm.me", role = c("cre", "aut")),
+  person("Cuong", "Duong", email = "cuong.duong242@gmail.com", role = c("cre", "aut")),
+  person("Sean", "Taylor", email = "sjtz@pm.me", role = "aut"),
   person("Ben", "Letham", email = "bletham@fb.com", role = "aut")
   )
 Description: Implements a procedure for forecasting time series data based on
@@ -19,21 +20,22 @@ Imports: dplyr (>= 0.7.7), dygraphs (>= 1.1.1.4), extraDistr, ggplot2,
         grid, lubridate, methods, RcppParallel (>= 5.0.1), rstan (>=
         2.18.1), rstantools (>= 2.0.0), scales, StanHeaders, stats,
         tidyr (>= 0.6.1), xts
-Suggests: knitr, testthat, readr, rmarkdown
-SystemRequirements: GNU make, C++11
+Suggests: cmdstanr, posterior, knitr, testthat, readr, rmarkdown
+Additional_repositories: https://stan-dev.r-universe.dev
+SystemRequirements: GNU make, C++17
 Biarch: true
 License: MIT + file LICENSE
 LinkingTo: BH (>= 1.66.0), Rcpp (>= 0.12.0), RcppParallel (>= 5.0.1),
         RcppEigen (>= 0.3.3.3.0), rstan (>= 2.18.1), StanHeaders (>=
         2.18.0)
-LazyData: true
 VignetteBuilder: knitr
 Encoding: UTF-8
-RoxygenNote: 7.1.1
+RoxygenNote: 7.2.0
 NeedsCompilation: yes
-Packaged: 2021-03-30 00:55:01 UTC; seant
-Author: Sean Taylor [cre, aut],
+Packaged: 2026-01-22 01:40:13 UTC; runner
+Author: Cuong Duong [cre, aut],
+  Sean Taylor [aut],
   Ben Letham [aut]
-Maintainer: Sean Taylor <sjtz@pm.me>
+Maintainer: Cuong Duong <cuong.duong242@gmail.com>
 Repository: CRAN
-Date/Publication: 2021-03-30 12:10:07 UTC
+Date/Publication: 2026-01-22 08:20:02 UTC
